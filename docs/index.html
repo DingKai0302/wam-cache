@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAM-Cache</title>
+<meta name="description" content="WAM-Cache: training-free, staleness-bounded KV reuse that cuts the video DiT prefill of World Action Models by 32-42% while staying close to the dense policy.">
+<meta property="og:title" content="WAM-Cache: Staleness-Bounded KV Reuse for Efficient World Action Models">
+<meta property="og:description" content="WAM-Cache: training-free, staleness-bounded KV reuse that cuts the video DiT prefill of World Action Models by 32-42% while staying close to the dense policy.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<style>
+/* Layout: a short paper-style page. Abstract first, then the pipeline, the same three steps on real frames, and the efficiency charts. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --fg: #1b1f24;
+  --muted: #5d6772;
+  --rule: #e2e6ea;
+  --grid: #e9ecef;
+  --tint: #f5f7f9;
+  --accent: #104e94;
+  --accent-tint: #eef3fa;
+  /* colors taken from Figure 1 */
+  --refresh: #ff600a;
+  --score: 0, 112, 255;
+  --age: 74, 154, 60;
+  --p01: #f2f8ff; --p02: #ffede3; --p03: #f0f7eb;
+  /* chart series, validated as a 3-slot categorical set */
+  --s-ours: #2a78d6; --s-base: #eb6834; --s-dense: #1baf7a;
+  --font: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --math: "STIX Two Text", "Times New Roman", serif;
+  --measure: 44rem;
+  --mid: 56rem;
+  --wide: 68rem;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 400 1.0625rem/1.7 var(--font);
+  padding-inline: 16px; padding-block: 0 4rem;
+  -webkit-font-smoothing: antialiased;
+}
+p { margin: 0; }
+h1, h2 { margin: 0; text-wrap: balance; }
+h2 { font-size: 1.5rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
+h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+sub, sup { line-height: 0; font-size: 0.72em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+
+.measure { max-width: var(--measure); margin-inline: auto; }
+.measure > * + * { margin-top: 1rem; }
+.sec { margin-top: 4rem; }
+.m { font-family: var(--math); font-style: italic; font-size: 1.08em; line-height: 1; white-space: nowrap; }
+.m sub { font-style: italic; }
+.mean { text-decoration: overline; text-decoration-thickness: 1px; }
+
+/* header */
+.head { max-width: var(--wide); margin-inline: auto; padding-block: 2.75rem 0; text-align: center; display: grid; gap: 0.7rem; justify-items: center; }
+.head h1 { max-width: 50rem; font-size: clamp(1.55rem, 4.4vw, 2.7rem); line-height: 1.18; font-weight: 600; letter-spacing: -0.02em; }
+.authors { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.2rem 1.6rem; font-size: 1.1rem; font-weight: 500; margin-top: 0.5rem; }
+.authors sup, .affil sup { color: var(--muted); margin-right: 1px; }
+.affil { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.1rem 1.4rem; color: var(--muted); font-size: 0.95rem; }
+.mail { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 1.1rem; color: var(--muted); font-size: 0.85rem; }
+.mail span { user-select: all; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; margin-top: 0.5rem; }
+.btn { display: inline-flex; align-items: baseline; gap: 0.5rem; padding: 0.45rem 1rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--tint); color: var(--muted); font-size: 0.95rem; font-weight: 500; cursor: default; }
+.btn small { font-size: 0.72rem; font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.abstract { margin-top: 2.5rem; }
+.abstract h2 { font-size: 1.15rem; text-align: center; }
+
+/* figures */
+figure { margin: 0; }
+.fig img { display: block; width: 100%; height: auto; }
+.fig.wide { max-width: var(--wide); margin: 3rem auto 0; }
+figcaption, .cap { max-width: var(--measure); margin: 0.9rem auto 0; font-size: 0.9rem; line-height: 1.55; color: var(--muted); }
+figcaption b, .cap b { color: var(--fg); font-weight: 600; }
+.pan-hint { display: none; max-width: var(--measure); margin: 0.5rem auto 0; font-size: 0.8rem; color: var(--muted); }
+@media (max-width: 760px) {
+  .pan { overflow-x: auto; }
+  .pan img { width: 46rem; max-width: none; }
+  .pan-hint { display: block; }
+}
+
+/* step chips, colored like the panels of Figure 1 */
+.chip { display: inline-grid; place-items: center; min-width: 2.1rem; height: 1.45rem; padding-inline: 0.35rem; border-radius: 4px; font: 500 0.82rem/1 var(--font); color: var(--refresh); border: 1px solid rgba(0, 0, 0, 0.08); }
+.chip.c01 { background: var(--p01); } .chip.c02 { background: var(--p02); } .chip.c03 { background: var(--p03); }
+.chip.cR { background: #fff; font-family: var(--math); font-style: italic; font-size: 0.95rem; }
+
+/* real-frame viewer */
+.viewer { display: grid; grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); gap: 1.75rem; align-items: start; max-width: var(--measure); margin: 2rem auto 0; }
+.frame { position: relative; aspect-ratio: 320 / 384; background: #fff; border: 1px solid var(--rule); overflow: hidden; }
+.frame img, .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.frame img { opacity: 0; transition: opacity 0.3s ease; }
+.frame img.on { opacity: 1; }
+#fills rect { fill-opacity: 0; transition: fill-opacity 0.35s ease, fill 0.2s; }
+#ov .lines { fill: none; stroke: #1b1f24; stroke-opacity: 0; stroke-width: 0.7; transition: stroke-opacity 0.35s ease; }
+#ov .split { fill: none; stroke: #1b1f24; stroke-opacity: 0; stroke-width: 1; stroke-dasharray: 4 3; transition: stroke-opacity 0.35s ease; }
+#ov.on .lines { stroke-opacity: 0.16; }
+#ov.on .split { stroke-opacity: 0.5; }
+#ages text { font: 600 8.5px var(--font); fill: rgb(var(--age)); opacity: 0; transition: opacity 0.35s ease; text-anchor: middle; }
+#ov.age #ages text.on { opacity: 0.95; }
+.tags rect { fill: rgba(27, 31, 36, 0.66); }
+.tags text { font: 500 9px var(--font); fill: #fff; }
+.legend { min-height: 1.6rem; margin-top: 0.7rem; font-size: 0.82rem; color: var(--muted); }
+.lg { display: none; align-items: center; gap: 0.55rem; }
+.legend[data-mode="S"] .lg-s, .legend[data-mode="P"] .lg-s, .legend[data-mode="A"] .lg-a, .legend[data-mode="R"] .lg-r { display: flex; }
+.ramp { width: 5.5rem; height: 0.6rem; border: 1px solid var(--rule); background: linear-gradient(90deg, rgba(var(--score), 0.04), rgba(var(--score), 0.7)); }
+.sw { width: 0.85rem; height: 0.85rem; border: 1px solid var(--rule); background: #fff; }
+.sw.hot { background: rgba(255, 96, 10, 0.55); border-color: rgba(255, 96, 10, 0.9); }
+.sw.aged { background: rgba(var(--age), 0.3); border-color: rgba(var(--age), 0.7); }
+.lg .gap { width: 0.6rem; }
+.stage .cap { margin: 0.5rem 0 0; max-width: none; }
+
+.steps { list-style: none; margin: 0; padding: 0; }
+.step { all: unset; box-sizing: border-box; position: relative; display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.8rem; width: 100%; padding: 0.7rem 0 0.75rem; border-top: 1px solid var(--rule); color: var(--muted); cursor: pointer; }
+.steps li:last-child .step { border-bottom: 1px solid var(--rule); }
+.step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.step .chip { align-self: center; }
+.step .t { font-weight: 500; align-self: center; font-size: 0.97rem; }
+.step .d { grid-column: 2; font-size: 0.88rem; line-height: 1.45; }
+.step[aria-current="true"] { color: var(--fg); }
+.step[aria-current="true"] .t { color: var(--accent); }
+.step::after { content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 5px; border-radius: 3px; background: transparent; }
+.step[aria-current="true"]::after { background: var(--accent-tint); }
+.step .bar { position: absolute; z-index: 1; left: 0; bottom: -3px; height: 5px; width: 0; border-radius: 3px; background: var(--accent); }
+.step[aria-current="true"] .bar { width: 100%; }
+.playing .step[aria-current="true"] .bar { width: 0; animation: fill 3800ms linear forwards; }
+@keyframes fill { to { width: 100%; } }
+.play { display: inline-flex; align-items: center; gap: 0.55rem; margin-top: 1rem; padding: 0.6rem 1.3rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: #fff; font-size: 1rem; font-weight: 500; cursor: pointer; }
+.play svg { width: 0.95rem; height: 0.95rem; fill: currentColor; }
+.play:hover { background: #0c3e78; }
+@media (max-width: 760px) {
+  .viewer { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+  .stage { max-width: 21rem; width: 100%; margin-inline: auto; }
+}
+
+/* efficiency: one bar pair per benchmark, all on one TFLOPs scale */
+.eff { max-width: var(--measure); margin: 1.6rem auto 0; }
+.eff .keys { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin-bottom: 0.7rem; font-size: 0.85rem; color: var(--muted); }
+.eff .keys span { display: inline-flex; align-items: center; gap: 0.45rem; }
+.eff .keys i { width: 0.9rem; height: 0.6rem; border-radius: 0 2px 2px 0; }
+.erow { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 14.5rem; gap: 0.35rem 1rem; align-items: center; padding-block: 0.7rem; border-top: 1px solid var(--rule); }
+.erow:last-of-type { border-bottom: 1px solid var(--rule); }
+.ename { grid-row: span 3; font-weight: 500; font-size: 0.95rem; }
+.ebar { position: relative; height: 1.15rem; }
+.ebar i { position: absolute; inset: 0 auto 0 0; border-radius: 0 4px 4px 0; }
+.ebar.dense i { background: var(--s-dense); }
+.ebar.ours i { background: var(--s-ours); }
+.ebar.big i { background: #86b6ef; }
+.ebar span { position: absolute; top: 50%; transform: translateY(-50%); padding-left: 0.5rem; font-size: 0.82rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eval { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eval b { color: var(--fg); font-weight: 600; }
+.eval .save { color: var(--s-ours); font-weight: 600; }
+.eff-axis { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 14.5rem; gap: 1rem; margin-top: 0.45rem; font-size: 0.78rem; color: var(--muted); }
+.eff-axis .ticks { position: relative; height: 1rem; }
+.eff-axis .ticks span { position: absolute; transform: translateX(-50%); }
+@media (max-width: 640px) {
+  .erow { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .ename { grid-row: auto; margin-bottom: 0.2rem; }
+  .eval { margin-bottom: 0.35rem; }
+
+  .eff-axis { display: none; }
+}
+
+/* bibtex */
+.bib { position: relative; max-width: var(--measure); margin: 1rem auto 0; }
+.bib pre { margin: 0; padding: 1rem 1.1rem; background: var(--tint); border: 1px solid var(--rule); border-radius: 6px; overflow-x: auto; font: 400 0.85rem/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.bib button { position: absolute; top: 0.55rem; right: 0.55rem; padding: 0.25rem 0.7rem; border: 1px solid var(--rule); border-radius: 6px; background: #fff; font-size: 0.8rem; cursor: pointer; }
+footer { max-width: var(--wide); margin: 4rem auto 0; padding-top: 1.5rem; border-top: 1px solid var(--rule); text-align: center; font-size: 0.85rem; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .frame img, #fills rect, #ov .lines, #ov .split, #ages text { transition: none; }
+}
+</style>
+
+<header class="head">
+  <h1>WAM-Cache: Staleness-Bounded KV Reuse for Efficient World Action Models</h1>
+  <p class="authors"><span>Kai Ding<sup>1</sup></span><span>Yang He<sup>2</sup></span><span>Ruijie Quan<sup>1</sup></span><span>Yi Yang<sup>1</sup></span></p>
+  <p class="affil"><span><sup>1</sup>Zhejiang University</span><span><sup>2</sup>IAIC, Agency for Science, Technology and Research, Singapore</span></p>
+  <p class="mail"><span>dingkai@zju.edu.cn</span><span>he_yang@a-star.edu.sg</span><span>quanruijie@zju.edu.cn</span><span>yangyics@zju.edu.cn</span></p>
+  <p class="links"><span class="btn" aria-disabled="true" title="Coming soon">Paper <small>soon</small></span><span class="btn" aria-disabled="true" title="Coming soon">arXiv <small>soon</small></span><span class="btn" aria-disabled="true" title="Coming soon">Code <small>soon</small></span></p>
+</header>
+
+<main>
+
+<section class="measure abstract" id="abstract">
+  <h2>Abstract</h2>
+  <p>World Action Models (WAMs) enable generalist robot manipulation by conditioning an action expert on representations from a pretrained video Diffusion Transformer (DiT). In closed-loop control, the video DiT runs at every chunk to encode the current observation into layerwise key–value (KV) pairs that the action expert queries. This prefill dominates the per-chunk computational cost, yet existing training-free accelerations leave it fully dense. We present <b>WAM-Cache</b>, a training-free framework that retains layerwise key–value representations across chunks and recomputes only a sparse <em>refresh set</em> of tokens. Crucially, we find that the intuitive heuristic of refreshing visually drifted tokens plateaus far below the dense baseline, even with an oracle predicting ground-truth KV drift. Downstream action accuracy is instead governed by where the action expert attends, not by what moved. WAM-Cache therefore selects the refresh set by uniting the action expert’s cross-attention with visual latent surprise, complemented by a strict age bound that suppresses compounding error. On Fast-WAM, WAM-Cache cuts video DiT prefill FLOPs by 32–42% across RoboTwin 2.0, LIBERO, and real-world experiments, while staying within 0.7–1.8 percentage points of the dense policy in simulation and 2.5 points on a real robot.</p>
+</section>
+
+<figure class="fig wide">
+  <div class="pan"><img src="img/pipeline.png" width="2276" height="1252" alt="The WAM-Cache pipeline. Panel (a) builds the refresh set in three steps: latent surprise, action-conditioned selection and age-bounded refresh. Panel (b) runs a sparse video DiT prefill over the refresh set and updates the layerwise key-value cache that the action expert reads."></div>
+  <p class="pan-hint">Scroll sideways to see the whole figure.</p>
+  <figcaption><b>The WAM-Cache pipeline.</b> (a) Three steps build the refresh set <span class="m">R<sub>t</sub></span>: <span class="chip c01">01</span> latent surprise, <span class="chip c02">02</span> action-conditioned selection and <span class="chip c03">03</span> age-bounded refresh. (b) The video DiT runs a sparse prefill over <span class="m">R<sub>t</sub></span> and updates the layerwise keys and values in place. The action expert then denoises the next action chunk over the mixed cache.</figcaption>
+</figure>
+
+<section class="sec" id="live">
+  <div class="measure">
+    <h2>The three steps on a real chunk</h2>
+    <p>Here are steps 01 to 03 of (a) on chunk <span class="m">t</span> of one RoboTwin 2.0 episode. Between chunk <span class="m">t</span>−1 and chunk <span class="m">t</span>, only the arm moves.</p>
+  </div>
+
+  <div class="viewer" id="viewer">
+    <div class="stage">
+      <div class="frame">
+        <img class="on" id="img-prev" src="img/chunk_tm1_stitched.png" width="320" height="384" alt="Model input at chunk t minus 1. The left arm enters from the top left, above and to the left of the blue cup.">
+        <img id="img-cur" src="img/chunk_t_stitched.png" width="320" height="384" alt="Model input at chunk t. The gripper is around the blue cup.">
+        <svg id="ov" viewBox="0 0 320 384" aria-hidden="true">
+          <g id="fills"></g>
+          <g id="ages"></g>
+          <path class="lines" d="M0 32H320M0 64H320M0 96H320M0 128H320M0 160H320M0 192H320M0 224H320M0 256H320M0 288H320M0 320H320M0 352H320M32 0V384M64 0V384M96 0V384M128 0V384M160 0V384M192 0V384M224 0V384M256 0V384M288 0V384"/>
+          <path class="split" d="M0 256H320M160 256V384"/>
+          <g class="tags">
+            <g transform="translate(5 235)"><rect width="66" height="15" rx="2"/><text x="6" y="10.8">Head camera</text></g>
+            <g transform="translate(5 363)"><rect width="56" height="15" rx="2"/><text x="6" y="10.8">Left wrist</text></g>
+            <g transform="translate(165 363)"><rect width="60" height="15" rx="2"/><text x="6" y="10.8">Right wrist</text></g>
+            <g transform="translate(259 5)"><rect width="56" height="15" rx="2"/><text x="6" y="10.8" id="chunk-tag">Chunk t−1</text></g>
+          </g>
+        </svg>
+      </div>
+      <div class="legend" id="legend" data-mode="none">
+        <p class="lg lg-s"><span id="lg-s-name">Surprise score</span><i class="ramp"></i><span>low to high</span></p>
+        <p class="lg lg-a"><i class="sw aged"></i><span>Not refreshed, age +1</span></p>
+        <p class="lg lg-r"><i class="sw hot"></i><span>Recomputed</span><i class="gap"></i><i class="sw"></i><span>Reused from cache</span></p>
+      </div>
+      <p class="cap">RoboTwin 2.0 · place_empty_cup</p>
+    </div>
+
+    <div class="side">
+      <ol class="steps" id="steps">
+        <li><button class="step" id="step-0" type="button"><span class="chip c01">01</span><span class="t">Latent surprise <span class="m">S<sub>t</sub></span></span><span class="d">Compares each token with its embedding at its last refresh. The arm moved since chunk <span class="m">t</span>−1, so the scores peak on the arm.</span><span class="bar" aria-hidden="true"></span></button></li>
+        <li><button class="step" id="step-1" type="button"><span class="chip c02">02</span><span class="t">Action-conditioned selection <span class="m">P<sub>t</sub></span></span><span class="d">Ranks tokens by the action expert’s attention. The arm column and the left wrist view stand out.</span><span class="bar" aria-hidden="true"></span></button></li>
+        <li><button class="step" id="step-2" type="button"><span class="chip c03">03</span><span class="t">Age-bounded refresh <span class="m">A<sub>t</sub></span></span><span class="d">Every token that is not refreshed ages by one. A token that reaches age <span class="m">G</span> is refreshed whatever its scores.</span><span class="bar" aria-hidden="true"></span></button></li>
+        <li><button class="step" id="step-3" type="button"><span class="chip cR"><span>R<sub>t</sub></span></span><span class="t">Refresh set <span class="m">R<sub>t</sub></span> = <span class="m">S<sub>t</sub></span> ∪ <span class="m">P<sub>t</sub></span> ∪ <span class="m">A<sub>t</sub></span></span><span class="d">Only these tokens enter the sparse prefill in (b). All other tokens reuse their cached keys and values.</span><span class="bar" aria-hidden="true"></span></button></li>
+      </ol>
+      <button class="play" id="toggle" type="button">Pause</button>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="efficiency">
+  <div class="measure">
+    <h2>Efficiency</h2>
+    <p>WAM-Cache comes in two settings. The default cuts the prefill FLOPs by 41.6% on RoboTwin 2.0 and 32.3% on LIBERO, within 1.8 and 0.65 points of the dense policy. The larger budget still saves 28.2% and 26.1%. It comes within 0.1 points of dense on RoboTwin 2.0 and matches it on LIBERO.</p>
+  </div>
+  <div class="eff">
+    <p class="keys" aria-hidden="true"><span><i style="background:var(--s-dense)"></i>Dense prefill</span><span><i style="background:var(--s-ours)"></i>WAM-Cache</span><span><i style="background:#86b6ef"></i>WAM-Cache, larger budget</span></p>
+    <div class="erow">
+      <span class="ename">RoboTwin 2.0</span>
+      <div class="ebar dense" title="Dense prefill"><i style="width:87.75%"></i></div>
+      <span class="eval">1.053 T · SR <b>90.16</b></span>
+      <div class="ebar ours" title="WAM-Cache"><i style="width:51.25%"></i></div>
+      <span class="eval">0.615 T · SR <b>88.36</b> · <span class="save">−41.6% FLOPs</span></span>
+      <div class="ebar ours big" title="WAM-Cache, larger budget"><i style="width:63.00%"></i></div>
+      <span class="eval">0.756 T · SR <b>90.08</b> · <span class="save">−28.2% FLOPs</span></span>
+    </div>
+    <div class="erow">
+      <span class="ename">LIBERO</span>
+      <div class="ebar dense" title="Dense prefill"><i style="width:71.58%"></i></div>
+      <span class="eval">0.859 T · SR <b>96.50</b></span>
+      <div class="ebar ours" title="WAM-Cache"><i style="width:48.50%"></i></div>
+      <span class="eval">0.582 T · SR <b>95.85</b> · <span class="save">−32.3% FLOPs</span></span>
+      <div class="ebar ours big" title="WAM-Cache, larger budget"><i style="width:52.92%"></i></div>
+      <span class="eval">0.635 T · SR <b>96.50</b> · <span class="save">−26.1% FLOPs</span></span>
+    </div>
+    <div class="eff-axis"><span></span><span class="ticks"><span style="left:0.00%">0</span><span style="left:33.33%">0.4</span><span style="left:66.67%">0.8</span><span style="left:100.00%">1.2</span></span><span>Prefill TFLOPs / chunk</span></div>
+    <p class="cap" style="margin-inline:0">SR is the success rate in %. RoboTwin 2.0 uses clean scenes, and LIBERO is the average over its four suites. The default uses (<span class="m">b<sub>a</sub></span>, <span class="m">b<sub>s</sub></span>) = (0.4, 0.1) on RoboTwin 2.0 and (0.5, 0.1) on LIBERO. The larger budget uses (0.6, 0.1) on both.</p>
+  </div>
+</section>
+
+<section class="sec" id="bibtex">
+  <div class="measure">
+    <h2>BibTeX</h2>
+  </div>
+  <div class="bib">
+    <button id="copy" type="button">Copy</button>
+<pre id="bibtext">@misc{ding2026wamcache,
+  title  = {{WAM-Cache}: Staleness-Bounded {KV} Reuse for
+            Efficient World Action Models},
+  author = {Ding, Kai and He, Yang and Quan, Ruijie and Yang, Yi},
+  year   = {2026}
+}</pre>
+  </div>
+</section>
+
+</main>
+
+<footer>WAM-Cache · Zhejiang University · IAIC, Agency for Science, Technology and Research, Singapore</footer>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  /* ---------- real-frame viewer ---------- */
+  var MAPS = {"S":[1.424,0.693,0.108,0.09,0.09,0.124,0.112,0.102,0.09,0.074,1.1,1.276,0.299,0.09,0.108,0.124,0.102,0.09,0.09,0.068,0.863,1.051,0.456,0.09,0.102,0.09,0.08,0.086,0.09,0.058,1.183,0.879,0.647,0.185,0.112,0.112,0.09,0.09,0.08,0.058,1.343,1.007,1.106,0.377,0.299,0.222,0.135,0.09,0.102,0.086,0.493,0.604,0.388,0.268,0.394,0.24,0.195,0.207,0.102,0.145,0.388,0.299,0.29,0.24,0.345,0.345,0.333,0.284,0.222,0.212,0.317,0.222,0.173,0.367,0.228,0.228,0.296,0.327,0.268,0.234,0.543,0.345,0.444,0.675,0.786,0.24,0.145,0.167,0.163,0.139,0.604,0.466,0.444,0.647,1.078,0.234,0.139,0.167,0.145,0.135,0.665,0.432,0.592,0.493,0.665,0.268,0.167,0.139,0.112,0.108,0.647,0.576,0.675,0.543,0.693,0.268,0.124,0.068,0.031,0.019],"P":[0.242,0.0074,0.0036,0.0046,0.0046,0.0046,0.0046,0.0046,0.0046,0.0046,0.0128,0.0128,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0139,0.0111,0.0063,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0128,0.0128,0.0074,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0111,0.0111,0.0111,0.0036,0.0026,0.0053,0.0046,0.0026,0.0026,0.0036,0.0074,0.0074,0.0111,0.0053,0.0036,0.0053,0.0053,0.0026,0.0026,0.0063,0.0074,0.0046,0.0053,0.0036,0.0036,0.0046,0.0036,0.0026,0.0026,0.0046,0.0063,0.0036,0.0036,0.0036,0.0036,0.0046,0.0036,0.0036,0.0036,0.0046,0.0231,0.0063,0.0046,0.0046,0.0063,0.0091,0.0036,0.0036,0.0036,0.0046,0.0053,0.0046,0.0046,0.0046,0.0091,0.0046,0.0036,0.0036,0.0036,0.0046,0.0053,0.0046,0.0053,0.0046,0.0149,0.0046,0.0053,0.0053,0.0053,0.0053,0.0063,0.0053,0.0166,0.0063,0.0111,0.0036,0.0128,0.0036,0.0036,0.0046],"R":[1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,1,0,0,0]};
+  var S = MAPS.S, P = MAPS.P, R = MAPS.R;
+  var viewer = document.getElementById('viewer');
+  var ov = document.getElementById('ov');
+  var fills = document.getElementById('fills');
+  var ages = document.getElementById('ages');
+  var imgPrev = document.getElementById('img-prev');
+  var imgCur = document.getElementById('img-cur');
+  var legend = document.getElementById('legend');
+  var lgName = document.getElementById('lg-s-name');
+  var chunkTag = document.getElementById('chunk-tag');
+  var stepsEl = document.getElementById('steps');
+  var toggle = document.getElementById('toggle');
+  var buttons = Array.prototype.slice.call(stepsEl.querySelectorAll('.step'));
+
+  // One cell per token of the 12 x 10 grid. A token is a 32 x 32 px block of the 320 x 384 model input.
+  var cells = [], plus = [];
+  for (var i = 0; i < 120; i++) {
+    var x = (i % 10) * 32, y = Math.floor(i / 10) * 32;
+    cells.push(el('rect', { x: x, y: y, width: 32, height: 32 }, fills));
+    var t = el('text', { x: x + 16, y: y + 19 }, ages);
+    t.textContent = '+1';
+    if (!R[i]) t.setAttribute('class', 'on');
+    plus.push(t);
+  }
+  function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+  var SCORE = 'rgb(0, 112, 255)', HOT = 'rgb(255, 96, 10)', AGE = 'rgb(74, 154, 60)';
+  function paint(layer) {
+    for (var k = 0; k < 120; k++) {
+      var c = cells[k], a = 0, f = SCORE;
+      if (layer === 'S') a = 0.7 * clamp01((S[k] - 0.1) / 1.1);
+      else if (layer === 'P') a = 0.7 * clamp01((P[k] - 0.004) / 0.016);
+      else if (layer === 'A') { f = AGE; a = R[k] ? 0 : 0.26; }
+      else if (layer === 'R') { f = HOT; a = R[k] ? 0.56 : 0; }
+      c.style.fill = f;
+      c.style.fillOpacity = a;
+    }
+    ov.classList.toggle('on', layer !== '');
+    ov.classList.toggle('age', layer === 'A');
+    legend.setAttribute('data-mode', layer || 'none');
+    if (layer === 'S') lgName.textContent = 'Surprise score';
+    if (layer === 'P') lgName.textContent = 'Attention mass';
+  }
+  function frame(which) {
+    imgPrev.classList.toggle('on', which === 'prev');
+    imgCur.classList.toggle('on', which === 'cur');
+    chunkTag.textContent = which === 'prev' ? 'Chunk t−1' : 'Chunk t';
+  }
+  var LAYERS = ['S', 'P', 'A', 'R'];
+  var current = 0, introTimer = null;
+  function show(n) {
+    current = n;
+    clearTimeout(introTimer);
+    buttons.forEach(function (b, j) {
+      if (j === n) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+    if (n === 0 && !reduce) {
+      // step 01 first shows the earlier chunk, then the surprise against it
+      frame('prev'); paint('');
+      introTimer = setTimeout(function () { frame('cur'); paint('S'); }, 1100);
+    } else {
+      frame('cur'); paint(LAYERS[n]);
+    }
+  }
+  var visible = false, userPaused = reduce;
+  function sync() {
+    viewer.classList.toggle('playing', visible && !userPaused);
+    toggle.innerHTML = userPaused
+      ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>Play'
+      : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5h3.2v11H3.5zM9.3 2.5h3.2v11H9.3z"/></svg>Pause';
+  }
+  stepsEl.addEventListener('animationend', function (e) {
+    if (e.target.classList && e.target.classList.contains('bar')) show((current + 1) % LAYERS.length);
+  });
+  buttons.forEach(function (b, j) {
+    b.addEventListener('click', function () { userPaused = true; show(j); sync(); });
+  });
+  toggle.addEventListener('click', function () { userPaused = !userPaused; if (!userPaused) show(current); sync(); });
+
+  /* ---------- start animations only when on screen ---------- */
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) { visible = es[0].isIntersecting; sync(); }, { threshold: 0.45 }).observe(viewer);
+  } else {
+    visible = true;
+  }
+  show(0);
+  sync();
+
+  /* ---------- copy BibTeX ---------- */
+  var copy = document.getElementById('copy');
+  copy.addEventListener('click', function () {
+    var node = document.getElementById('bibtext');
+    function done() { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy'; }, 1500); }
+    function select() {
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      copy.textContent = 'Press Ctrl+C';
+    }
+    try { navigator.clipboard.writeText(node.textContent).then(done, select); } catch (err) { select(); }
+  });
+})();
+</script>
+
+</body>
+</html>
