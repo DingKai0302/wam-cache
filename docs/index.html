@@ -97,6 +97,9 @@ figcaption b, .cap b { color: var(--fg); font-weight: 600; }
 .chip.c01 { background: var(--p01); } .chip.c02 { background: var(--p02); } .chip.c03 { background: var(--p03); }
 .chip.cR { background: #fff; font-family: var(--math); font-style: italic; font-size: 0.95rem; }
 
+.demo video { display: block; width: 100%; height: auto; background: #000; border: 1px solid var(--rule); }
+.demo figcaption { margin-top: 0.5rem; font-size: 0.82rem; color: var(--muted); }
+
 /* real-frame viewer */
 .viewer { display: grid; grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); gap: 1.75rem; align-items: start; max-width: var(--measure); margin: 2rem auto 0; }
 .frame { position: relative; aspect-ratio: 320 / 384; background: #fff; border: 1px solid var(--rule); overflow: hidden; }
@@ -207,46 +210,14 @@ footer { max-width: var(--wide); margin: 4rem auto 0; padding-top: 1.5rem; borde
 
 <section class="sec" id="live">
   <div class="measure">
-    <h2>The three steps on a real chunk</h2>
-    <p>Here are steps 01 to 03 of (a) on chunk <span class="m">t</span> of one RoboTwin 2.0 episode. Between chunk <span class="m">t</span>−1 and chunk <span class="m">t</span>, only the arm moves.</p>
+    <h2>WAM-Cache, step by step</h2>
+    <p>The video walks through steps 01 to 03 of (a) on chunk <span class="m">t</span> of one RoboTwin 2.0 episode. Between chunk <span class="m">t</span>−1 and chunk <span class="m">t</span>, only the arm moves.</p>
   </div>
 
-  <div class="viewer" id="viewer">
-    <div class="stage">
-      <div class="frame">
-        <img class="on" id="img-prev" src="img/chunk_tm1_stitched.png" width="320" height="384" alt="Model input at chunk t minus 1. The left arm enters from the top left, above and to the left of the blue cup.">
-        <img id="img-cur" src="img/chunk_t_stitched.png" width="320" height="384" alt="Model input at chunk t. The gripper is around the blue cup.">
-        <svg id="ov" viewBox="0 0 320 384" aria-hidden="true">
-          <g id="fills"></g>
-          <g id="ages"></g>
-          <path class="lines" d="M0 32H320M0 64H320M0 96H320M0 128H320M0 160H320M0 192H320M0 224H320M0 256H320M0 288H320M0 320H320M0 352H320M32 0V384M64 0V384M96 0V384M128 0V384M160 0V384M192 0V384M224 0V384M256 0V384M288 0V384"/>
-          <path class="split" d="M0 256H320M160 256V384"/>
-          <g class="tags">
-            <g transform="translate(5 235)"><rect width="66" height="15" rx="2"/><text x="6" y="10.8">Head camera</text></g>
-            <g transform="translate(5 363)"><rect width="56" height="15" rx="2"/><text x="6" y="10.8">Left wrist</text></g>
-            <g transform="translate(165 363)"><rect width="60" height="15" rx="2"/><text x="6" y="10.8">Right wrist</text></g>
-            <g transform="translate(259 5)"><rect width="56" height="15" rx="2"/><text x="6" y="10.8" id="chunk-tag">Chunk t−1</text></g>
-          </g>
-        </svg>
-      </div>
-      <div class="legend" id="legend" data-mode="none">
-        <p class="lg lg-s"><span id="lg-s-name">Surprise score</span><i class="ramp"></i><span>low to high</span></p>
-        <p class="lg lg-a"><i class="sw aged"></i><span>Not refreshed, age +1</span></p>
-        <p class="lg lg-r"><i class="sw hot"></i><span>Recomputed</span><i class="gap"></i><i class="sw"></i><span>Reused from cache</span></p>
-      </div>
-      <p class="cap">RoboTwin 2.0 · place_empty_cup</p>
-    </div>
-
-    <div class="side">
-      <ol class="steps" id="steps">
-        <li><button class="step" id="step-0" type="button"><span class="chip c01">01</span><span class="t">Latent surprise <span class="m">S<sub>t</sub></span></span><span class="d">Compares each token with its embedding at its last refresh. The arm moved since chunk <span class="m">t</span>−1, so the scores peak on the arm.</span><span class="bar" aria-hidden="true"></span></button></li>
-        <li><button class="step" id="step-1" type="button"><span class="chip c02">02</span><span class="t">Action-conditioned selection <span class="m">P<sub>t</sub></span></span><span class="d">Ranks tokens by the action expert’s attention. The arm column and the left wrist view stand out.</span><span class="bar" aria-hidden="true"></span></button></li>
-        <li><button class="step" id="step-2" type="button"><span class="chip c03">03</span><span class="t">Age-bounded refresh <span class="m">A<sub>t</sub></span></span><span class="d">Every token that is not refreshed ages by one. A token that reaches age <span class="m">G</span> is refreshed whatever its scores.</span><span class="bar" aria-hidden="true"></span></button></li>
-        <li><button class="step" id="step-3" type="button"><span class="chip cR"><span>R<sub>t</sub></span></span><span class="t">Refresh set <span class="m">R<sub>t</sub></span> = <span class="m">S<sub>t</sub></span> ∪ <span class="m">P<sub>t</sub></span> ∪ <span class="m">A<sub>t</sub></span></span><span class="d">Only these tokens enter the sparse prefill in (b). All other tokens reuse their cached keys and values.</span><span class="bar" aria-hidden="true"></span></button></li>
-      </ol>
-      <button class="play" id="toggle" type="button">Pause</button>
-    </div>
-  </div>
+  <figure class="fig wide demo">
+    <video src="WAM-Cache_three_steps.mp4" autoplay loop muted playsinline controls preload="auto" width="1920" height="1080"></video>
+    <figcaption>RoboTwin 2.0 · place_empty_cup</figcaption>
+  </figure>
 </section>
 
 <section class="sec" id="efficiency">
@@ -311,95 +282,6 @@ footer { max-width: var(--wide); margin: 4rem auto 0; padding-top: 1.5rem; borde
     return e;
   }
   var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-
-  /* ---------- real-frame viewer ---------- */
-  var MAPS = {"S":[1.424,0.693,0.108,0.09,0.09,0.124,0.112,0.102,0.09,0.074,1.1,1.276,0.299,0.09,0.108,0.124,0.102,0.09,0.09,0.068,0.863,1.051,0.456,0.09,0.102,0.09,0.08,0.086,0.09,0.058,1.183,0.879,0.647,0.185,0.112,0.112,0.09,0.09,0.08,0.058,1.343,1.007,1.106,0.377,0.299,0.222,0.135,0.09,0.102,0.086,0.493,0.604,0.388,0.268,0.394,0.24,0.195,0.207,0.102,0.145,0.388,0.299,0.29,0.24,0.345,0.345,0.333,0.284,0.222,0.212,0.317,0.222,0.173,0.367,0.228,0.228,0.296,0.327,0.268,0.234,0.543,0.345,0.444,0.675,0.786,0.24,0.145,0.167,0.163,0.139,0.604,0.466,0.444,0.647,1.078,0.234,0.139,0.167,0.145,0.135,0.665,0.432,0.592,0.493,0.665,0.268,0.167,0.139,0.112,0.108,0.647,0.576,0.675,0.543,0.693,0.268,0.124,0.068,0.031,0.019],"P":[0.242,0.0074,0.0036,0.0046,0.0046,0.0046,0.0046,0.0046,0.0046,0.0046,0.0128,0.0128,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0139,0.0111,0.0063,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0128,0.0128,0.0074,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0026,0.0111,0.0111,0.0111,0.0036,0.0026,0.0053,0.0046,0.0026,0.0026,0.0036,0.0074,0.0074,0.0111,0.0053,0.0036,0.0053,0.0053,0.0026,0.0026,0.0063,0.0074,0.0046,0.0053,0.0036,0.0036,0.0046,0.0036,0.0026,0.0026,0.0046,0.0063,0.0036,0.0036,0.0036,0.0036,0.0046,0.0036,0.0036,0.0036,0.0046,0.0231,0.0063,0.0046,0.0046,0.0063,0.0091,0.0036,0.0036,0.0036,0.0046,0.0053,0.0046,0.0046,0.0046,0.0091,0.0046,0.0036,0.0036,0.0036,0.0046,0.0053,0.0046,0.0053,0.0046,0.0149,0.0046,0.0053,0.0053,0.0053,0.0053,0.0063,0.0053,0.0166,0.0063,0.0111,0.0036,0.0128,0.0036,0.0036,0.0046],"R":[1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,1,0,0,0]};
-  var S = MAPS.S, P = MAPS.P, R = MAPS.R;
-  var viewer = document.getElementById('viewer');
-  var ov = document.getElementById('ov');
-  var fills = document.getElementById('fills');
-  var ages = document.getElementById('ages');
-  var imgPrev = document.getElementById('img-prev');
-  var imgCur = document.getElementById('img-cur');
-  var legend = document.getElementById('legend');
-  var lgName = document.getElementById('lg-s-name');
-  var chunkTag = document.getElementById('chunk-tag');
-  var stepsEl = document.getElementById('steps');
-  var toggle = document.getElementById('toggle');
-  var buttons = Array.prototype.slice.call(stepsEl.querySelectorAll('.step'));
-
-  // One cell per token of the 12 x 10 grid. A token is a 32 x 32 px block of the 320 x 384 model input.
-  var cells = [], plus = [];
-  for (var i = 0; i < 120; i++) {
-    var x = (i % 10) * 32, y = Math.floor(i / 10) * 32;
-    cells.push(el('rect', { x: x, y: y, width: 32, height: 32 }, fills));
-    var t = el('text', { x: x + 16, y: y + 19 }, ages);
-    t.textContent = '+1';
-    if (!R[i]) t.setAttribute('class', 'on');
-    plus.push(t);
-  }
-  function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
-  var SCORE = 'rgb(0, 112, 255)', HOT = 'rgb(255, 96, 10)', AGE = 'rgb(74, 154, 60)';
-  function paint(layer) {
-    for (var k = 0; k < 120; k++) {
-      var c = cells[k], a = 0, f = SCORE;
-      if (layer === 'S') a = 0.7 * clamp01((S[k] - 0.1) / 1.1);
-      else if (layer === 'P') a = 0.7 * clamp01((P[k] - 0.004) / 0.016);
-      else if (layer === 'A') { f = AGE; a = R[k] ? 0 : 0.26; }
-      else if (layer === 'R') { f = HOT; a = R[k] ? 0.56 : 0; }
-      c.style.fill = f;
-      c.style.fillOpacity = a;
-    }
-    ov.classList.toggle('on', layer !== '');
-    ov.classList.toggle('age', layer === 'A');
-    legend.setAttribute('data-mode', layer || 'none');
-    if (layer === 'S') lgName.textContent = 'Surprise score';
-    if (layer === 'P') lgName.textContent = 'Attention mass';
-  }
-  function frame(which) {
-    imgPrev.classList.toggle('on', which === 'prev');
-    imgCur.classList.toggle('on', which === 'cur');
-    chunkTag.textContent = which === 'prev' ? 'Chunk t−1' : 'Chunk t';
-  }
-  var LAYERS = ['S', 'P', 'A', 'R'];
-  var current = 0, introTimer = null;
-  function show(n) {
-    current = n;
-    clearTimeout(introTimer);
-    buttons.forEach(function (b, j) {
-      if (j === n) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
-    });
-    if (n === 0 && !reduce) {
-      // step 01 first shows the earlier chunk, then the surprise against it
-      frame('prev'); paint('');
-      introTimer = setTimeout(function () { frame('cur'); paint('S'); }, 1100);
-    } else {
-      frame('cur'); paint(LAYERS[n]);
-    }
-  }
-  var visible = false, userPaused = reduce;
-  function sync() {
-    viewer.classList.toggle('playing', visible && !userPaused);
-    toggle.innerHTML = userPaused
-      ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>Play'
-      : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5h3.2v11H3.5zM9.3 2.5h3.2v11H9.3z"/></svg>Pause';
-  }
-  stepsEl.addEventListener('animationend', function (e) {
-    if (e.target.classList && e.target.classList.contains('bar')) show((current + 1) % LAYERS.length);
-  });
-  buttons.forEach(function (b, j) {
-    b.addEventListener('click', function () { userPaused = true; show(j); sync(); });
-  });
-  toggle.addEventListener('click', function () { userPaused = !userPaused; if (!userPaused) show(current); sync(); });
-
-  /* ---------- start animations only when on screen ---------- */
-  if ('IntersectionObserver' in window) {
-    new IntersectionObserver(function (es) { visible = es[0].isIntersecting; sync(); }, { threshold: 0.45 }).observe(viewer);
-  } else {
-    visible = true;
-  }
-  show(0);
-  sync();
 
   /* ---------- copy BibTeX ---------- */
   var copy = document.getElementById('copy');
